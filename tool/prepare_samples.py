@@ -122,6 +122,7 @@ def probe(path: pathlib.Path) -> dict:
         "pix_fmt": video and video.get("pix_fmt"),
         "width": video and video["width"],
         "height": video and video["height"],
+        "sar": video and video.get("sample_aspect_ratio"),
         "audio_codec": audio and audio["codec_name"],
         "channels": audio and audio.get("channels"),
         "sample_rate": audio and int(audio.get("sample_rate", 0)),
