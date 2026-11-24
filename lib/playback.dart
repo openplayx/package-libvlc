@@ -154,7 +154,13 @@ abstract class PlayerBackend extends ValueNotifier<PlayerSnapshot> {
 }
 
 class LibVlcBackend extends PlayerBackend {
-  LibVlcBackend() {
+  /// [extraOptions] are appended to the libVLC instance options; tests use
+  /// them, e.g. to write decoded audio to a file (`--aout=afile`).
+  LibVlcBackend({List<String> extraOptions = const []})
+    : _controller = VlcPlayerController(
+        // VLCKit defaults to pausing at EOF; request an actual ended event.
+        options: ['--ignore-config', '--no-play-and-pause', ...extraOptions],
+      ) {
     if (kIsWeb) {
       throw UnsupportedError('OpenPlayX 暂不支持 Web 播放。');
     }
@@ -163,10 +169,7 @@ class LibVlcBackend extends PlayerBackend {
       unawaited(_sampleReadSpeed());
     });
   }
-  final VlcPlayerController _controller = VlcPlayerController(
-    // VLCKit defaults to pausing at EOF; request an actual ended event.
-    options: ['--ignore-config', '--no-play-and-pause'],
-  );
+  final VlcPlayerController _controller;
   bool _disposed = false;
   bool _hasStarted = false;
   bool _ended = false;

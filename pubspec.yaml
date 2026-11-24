@@ -1,5 +1,5 @@
 name: openplayx_playback
-description: Shared libVLC playback adapter for OpenPlayX.
+description: libVLC playback adapter for OpenPlayX, with file format playback tests.
 publish_to: none
 version: 0.1.0
 environment:
@@ -7,4 +7,5 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  vlc_player: ^2.1.2
+  # Pinned exactly: the format tests describe this libVLC build.
+  vlc_player: 2.1.2
