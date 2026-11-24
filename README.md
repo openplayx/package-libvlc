@@ -82,7 +82,7 @@ result covers the same libVLC build and options as OpenPlayX:
 | snapshot vs. the SMPTE bars (mean RGB difference on a 32×24 grid, limit 24) | corrupt pictures, green/grey frames, wrong colours |
 | decoded audio written with libVLC's `afile` output: RMS and frequency vs. the 1 kHz tone | silence, noise, wrong decoding |
 | duration and video size | wrong timing or dimensions |
-| seek to the middle | seek failures, playback ending after a seek |
+| seek to the middle, then play on to the end | seek failures, playback stopping early after a seek |
 
 Limits: the bars are a still picture, so damage only shows when it hits a
 keyframe (a corrupted keyframe scores ~87, clean samples ~9); the snapshot is

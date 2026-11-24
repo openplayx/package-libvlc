@@ -14,7 +14,7 @@
 //   4. sound: decoded audio is written to a WAV file (libVLC afile output),
 //      and its level and frequency are compared with the 1 kHz tone (silence,
 //      noise, wrong decoding);
-//   5. duration, video size and a forward seek.
+//   5. duration, video size, and a forward seek that plays on to the end.
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -37,6 +37,14 @@ const _systemAudio = bool.fromEnvironment('OPX_SYSTEM_AUDIO');
 /// snapshot no longer shows the expected picture. Lossy codecs and colour
 /// matrix differences stay well below it; corruption does not.
 const _maxFrameDiff = 24.0;
+
+/// How much of the media may be left unplayed when playback after a seek
+/// ends. With the afile output, libVLC's clock trails the audio already
+/// written, so audio-only media report the end ~1.3 s early (up to ~2 s at
+/// 8 kHz); with video the clock follows the pictures. A demuxer that stops
+/// early leaves more.
+const _maxEndTailVideo = Duration(milliseconds: 1500);
+const _maxEndTailAudioOnly = Duration(milliseconds: 2300);
 
 /// Share of lost pictures / audio buffers tolerated in the sampling window.
 const _maxLossRatio = 0.1;
@@ -309,6 +317,28 @@ class _Check {
             '${backend.value.status} '
             'at ${backend.value.position}',
           );
+        } else {
+          // After the seek the media must play on to its end, not stop early.
+          final end = Duration(
+            milliseconds: wantDuration ?? total.inMilliseconds,
+          );
+          var furthest = at;
+          await waitFor(() {
+            if (backend.value.position > furthest) {
+              furthest = backend.value.position;
+            }
+            return backend.value.status == PlaybackStatus.ended;
+          }, timeout: end - at + const Duration(seconds: 4));
+          final tail = end - furthest;
+          metrics['end_status'] = backend.value.status.name;
+          metrics['end_tail_ms'] = tail.inMilliseconds;
+          if (tail > (wantVideo ? _maxEndTailVideo : _maxEndTailAudioOnly)) {
+            fail(
+              'after seeking, playback stopped ${tail.inMilliseconds} ms '
+              'before the end (${backend.value.status.name} at '
+              '${furthest.inMilliseconds} of ${end.inMilliseconds} ms)',
+            );
+          }
         }
       }
     }

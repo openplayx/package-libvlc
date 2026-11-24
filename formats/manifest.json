@@ -41,6 +41,7 @@
     {"id": "ogv-vp8-opus", "ext": "ogv", "linear": ["ALL-242"], "generate": ["-c:v", "libvpx", "-b:v", "1M", "-c:a", "libopus", "-f", "ogg"], "note": "ffmpeg here has no Theora encoder; VP8 in Ogg"},
 
     {"id": "mp3", "ext": "mp3", "linear": ["ALL-298"], "audio_only": true, "generate": ["-c:a", "libmp3lame", "-b:a", "192k"]},
+    {"id": "mp3-vbr", "ext": "mp3", "linear": ["ALL-298"], "audio_only": true, "generate": ["-c:a", "libmp3lame", "-q:a", "2"], "note": "VBR with a Xing header"},
     {"id": "aac-adts", "ext": "aac", "linear": ["ALL-299"], "audio_only": true, "generate": ["-c:a", "aac", "-f", "adts"], "expect": {"duration_ms": null}, "note": "raw ADTS has no duration; players estimate it"},
     {"id": "m4a-aac", "ext": "m4a", "audio_only": true, "generate": ["-c:a", "aac"]},
     {"id": "m4b-aac", "ext": "m4b", "linear": ["ALL-275"], "audio_only": true, "generate": ["-c:a", "aac", "-f", "ipod"]},

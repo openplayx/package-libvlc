@@ -311,23 +311,27 @@ class LibVlcBackend extends PlayerBackend {
     _subtitlePlaybackStatus = null;
     _source = uri;
     return _controller.setMedia(
-      VlcMediaSource(
-        uri: uri,
-        mediaOptions:
-            // VLCKit's native MP4 demuxer can stop reporting network playback time at
-            // 250ms. avformat keeps progress and seek events working for these files.
-            defaultTargetPlatform == TargetPlatform.macOS &&
-                (uri.scheme == 'http' || uri.scheme == 'https') &&
-                [
-                  '.mp4',
-                  '.m4v',
-                  '.mov',
-                ].any((ext) => uri.path.toLowerCase().endsWith(ext))
-            ? [':demux=avformat']
-            : [],
-      ),
+      VlcMediaSource(uri: uri, mediaOptions: mediaOptionsFor(uri)),
       autoPlay: true,
     );
+  }
+
+  /// Per-media libVLC options for [uri].
+  @visibleForTesting
+  static List<String> mediaOptionsFor(Uri uri, {TargetPlatform? platform}) {
+    final path = uri.path.toLowerCase();
+    // libVLC's own MPEG audio demuxer estimates time from the bitrate: after a
+    // seek it ends playback early (seconds early on short files) and the
+    // duration drifts. avformat seeks and ends correctly (format test `mp3`).
+    if (path.endsWith('.mp3')) return [':demux=avformat'];
+    // VLCKit's native MP4 demuxer can stop reporting network playback time at
+    // 250ms. avformat keeps progress and seek events working for these files.
+    if ((platform ?? defaultTargetPlatform) == TargetPlatform.macOS &&
+        (uri.scheme == 'http' || uri.scheme == 'https') &&
+        ['.mp4', '.m4v', '.mov'].any(path.endsWith)) {
+      return [':demux=avformat'];
+    }
+    return [];
   }
 
   @override

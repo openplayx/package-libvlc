@@ -9,3 +9,6 @@ dependencies:
     sdk: flutter
   # Pinned exactly: the format tests describe this libVLC build.
   vlc_player: 2.1.2
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
