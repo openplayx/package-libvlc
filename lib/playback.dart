@@ -322,8 +322,12 @@ class LibVlcBackend extends PlayerBackend {
     final path = uri.path.toLowerCase();
     // libVLC's own MPEG audio demuxer estimates time from the bitrate: after a
     // seek it ends playback early (seconds early on short files) and the
-    // duration drifts. avformat seeks and ends correctly (format test `mp3`).
-    if (path.endsWith('.mp3')) return [':demux=avformat'];
+    // duration drifts. Its Ogg demuxer hands FLAC-in-Ogg to no decoder (no
+    // sound). avformat plays both correctly, and Vorbis/Opus/FLAC in Ogg alike
+    // (format tests `mp3`, `oga-flac`, `ogg-*`).
+    if (['.mp3', '.oga', '.ogg'].any(path.endsWith)) {
+      return [':demux=avformat'];
+    }
     // VLCKit's native MP4 demuxer can stop reporting network playback time at
     // 250ms. avformat keeps progress and seek events working for these files.
     if ((platform ?? defaultTargetPlatform) == TargetPlatform.macOS &&

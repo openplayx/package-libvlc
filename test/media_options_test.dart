@@ -14,6 +14,13 @@ void main() {
     }
   });
 
+  test('Ogg audio uses the avformat demuxer', () {
+    expect(options('file:///a.oga'), [':demux=avformat']);
+    expect(options('https://host/a.OGG'), [':demux=avformat']);
+    expect(options('file:///a.opus'), isEmpty);
+    expect(options('file:///a.ogv'), isEmpty);
+  });
+
   test('network MP4 uses avformat on macOS only', () {
     expect(options('https://host/a.mp4', TargetPlatform.macOS), [
       ':demux=avformat',
