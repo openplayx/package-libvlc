@@ -317,6 +317,9 @@ class _Check {
             '${backend.value.status} '
             'at ${backend.value.position}',
           );
+        } else if (expectations['play_to_end'] == false) {
+          // Long real-world files: advancing after the seek is enough.
+          metrics['end_status'] = 'skipped (long file)';
         } else {
           // After the seek the media must play on to its end, not stop early.
           final end = Duration(

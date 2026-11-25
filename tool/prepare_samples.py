@@ -12,7 +12,12 @@ With --pack DIR, the local media of the format material pack (openplayx-test
 formats/, ALL-370) is added as samples "pack-<issue>-<ext>": expectations come
 from ffprobe; the pack's synthetic audio is a 440 Hz tone and its moving test
 pattern has no reference frame. Subtitle-only files and external candidates
-are left out (external candidates need a license check first).
+are left out. External candidates (real files from public test suites such
+as the FFmpeg FATE suite) join as "ext-<issue>-<ext>" only once an operator
+has downloaded them with the pack's fetch_samples.py (it asks for a license
+review first), or by hand, into the pack's external/<issue>/; each is copied under the
+issue's extension, since its own name may use another suffix (MPP and MP+ use
+an .mpc file). Their content is unknown: no tone or frame check.
 
 Usage: prepare_samples.py --cache DIR --out FILE [--only ID[,ID...]] [--pack DIR]
 """
@@ -118,18 +123,18 @@ def playlist(sample: dict, target: pathlib.Path, dest: pathlib.Path) -> None:
 
 def probe(path: pathlib.Path) -> dict:
     data = json.loads(run(["ffprobe", "-v", "error", "-print_format", "json", "-show_format", "-show_streams", str(path)]))
-    video = next((s for s in data["streams"] if s["codec_type"] == "video"), None)
-    audio = next((s for s in data["streams"] if s["codec_type"] == "audio"), None)
+    video = next((s for s in data["streams"] if s.get("codec_type") == "video"), None)
+    audio = next((s for s in data["streams"] if s.get("codec_type") == "audio"), None)
     duration = float(data["format"].get("duration") or (video or audio or {}).get("duration") or 0)
     return {
         "container": data["format"]["format_name"],
         "duration_ms": round(duration * 1000),
-        "video_codec": video and video["codec_name"],
+        "video_codec": video and video.get("codec_name", "unknown"),
         "pix_fmt": video and video.get("pix_fmt"),
         "width": video and video["width"],
         "height": video and video["height"],
         "sar": video and video.get("sample_aspect_ratio"),
-        "audio_codec": audio and audio["codec_name"],
+        "audio_codec": audio and audio.get("codec_name", "unknown"),
         "channels": audio and audio.get("channels"),
         "sample_rate": audio and int(audio.get("sample_rate", 0)),
     }
@@ -171,6 +176,30 @@ def pack_samples(pack: pathlib.Path) -> list[dict]:
     return list(by_path.values())
 
 
+def external_samples(pack: pathlib.Path) -> list[dict]:
+    """One sample per downloaded external candidate of an extension issue."""
+    samples = []
+    for t in json.loads((pack / "manifest.json").read_text())["tasks"]:
+        folder = pack / "external" / t["issue"]
+        if not t["category"].endswith("_extension") or not folder.is_dir():
+            continue
+        urls = {f["filename"]: f["url"] for f in t.get("files", [])}
+        files = sorted(f for f in folder.iterdir() if f.is_file() and not f.name.startswith("."))
+        if files:
+            ext = t["format"].lower()
+            src = files[0]
+            samples.append({"id": f"ext-{t['issue'].lower()}-{ext}", "ext": ext, "linear": [t["issue"]],
+                            "external": str(src), "note": f"{t['format']}: {urls.get(src.name, src.name)}"})
+    return samples
+
+
+def unprobed(path: pathlib.Path) -> dict:
+    """probe() fields for an audio file the local ffprobe cannot read
+    (tracker modules need libopenmpt): expect sound only."""
+    return {"container": None, "duration_ms": 0, "video_codec": None, "pix_fmt": None, "width": None,
+            "height": None, "sar": None, "audio_codec": "unknown", "channels": None, "sample_rate": None}
+
+
 def from_pack_probe(data: dict) -> dict:
     """probe() fields from the pack's recorded ffprobe output, for files the
     local ffprobe cannot read (MOD needs libopenmpt)."""
@@ -178,9 +207,9 @@ def from_pack_probe(data: dict) -> dict:
     audio = next((st for st in data["streams"] if st["codec_type"] == "audio"), None)
     return {"container": data["format"]["format_name"],
             "duration_ms": round(float(data["format"].get("duration") or 0) * 1000),
-            "video_codec": video and video["codec_name"], "pix_fmt": video and video.get("pix_fmt"),
+            "video_codec": video and video.get("codec_name", "unknown"), "pix_fmt": video and video.get("pix_fmt"),
             "width": video and video.get("width"), "height": video and video.get("height"), "sar": None,
-            "audio_codec": audio and audio["codec_name"], "channels": None, "sample_rate": None}
+            "audio_codec": audio and audio.get("codec_name", "unknown"), "channels": None, "sample_rate": None}
 
 
 def copy_pack(pack: pathlib.Path, media: pathlib.Path) -> pathlib.Path:
@@ -226,7 +255,7 @@ def main() -> int:
         if not (a.pack / "manifest.json").exists():
             print(f"no manifest.json in {a.pack}", file=sys.stderr)
             return 2
-        samples += pack_samples(a.pack)
+        samples += pack_samples(a.pack) + external_samples(a.pack)
     by_id = {s["id"]: s for s in samples}
     patterns = [p for p in a.only.split(",") if p]
     wanted = [s for s in samples if not patterns or any(fnmatch.fnmatch(s["id"], p) for p in patterns)]
@@ -254,6 +283,12 @@ def main() -> int:
                     raise
                 return dest, from_pack_probe(s["pack_probe"])
         dest = media / f"{s['id']}.{s['ext']}"
+        if "external" in s:
+            shutil.copyfile(s["external"], dest)
+            try:
+                return dest, probe(dest)
+            except RuntimeError:
+                return dest, unprobed(dest)
         if "playlist" in s:
             target, info = prepare(by_id[s["playlist"]])
             playlist(s, target, dest)
@@ -283,6 +318,11 @@ def main() -> int:
             }
             if "generate" in target and info["video_codec"]:
                 expect["frame"] = str(reference(target.get("size", DEFAULT_SIZE), refs))
+            if "external" in s:
+                # Real files: short ones cannot show a seek, long ones need
+                # not be played to their end after it.
+                expect["seek"] = not info["duration_ms"] or info["duration_ms"] >= 3000
+                expect["play_to_end"] = 0 < info["duration_ms"] <= 20000
             expect.update(s.get("expect", {}))
             entry.update(status="ok", path=str(path), sha256=sha256(path), bytes=path.stat().st_size,
                          probe=info, expect=expect, grid=list(GRID))

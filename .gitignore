@@ -3,3 +3,7 @@ build/
 .flutter-plugins-dependencies
 # Format test samples are generated or downloaded into a cache, never committed.
 *.part.*
+
+# Python interpreter caches
+__pycache__/
+*.pyc
