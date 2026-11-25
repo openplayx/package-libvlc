@@ -42,7 +42,10 @@ backend.dispose();
 brew install ffmpeg                       # 生成素材与 ffprobe
 tool/test_formats.sh                      # 全部样本，macOS
 tool/test_formats.sh --only 'mp4-*,mp3'   # 按 ID 或通配符
+tool/test_formats.sh --pack --only 'pack-*'  # 素材包样本（../openplayx-test/formats）
 ```
+
+`--pack` 把 [openplayx-test](https://github.com/openplayx/openplayx-test) `formats/` 素材包（ALL-370）中的本地文件加为样本，命名为 `pack-<编号>-<扩展名>`，并标注 Linear 编号；期望值来自 ffprobe 和素材包的 440 Hz 正弦音。素材包的视频是动态测试图案，没有参考画面，这些样本不做截图比对。
 
 运行结果写入 `build/formats/<时间戳>/report.md`（另有 `results.json`、截图和 Flutter 日志），有样本失败时以非零状态退出。
 

@@ -48,7 +48,14 @@ CI does not run them). Run them when this package changes: the adapter, the
 brew install ffmpeg                       # sample generation and ffprobe
 tool/test_formats.sh                      # all samples, macOS
 tool/test_formats.sh --only 'mp4-*,mp3'   # ids or globs
+tool/test_formats.sh --pack --only 'pack-*'  # material pack samples (../openplayx-test/formats)
 ```
+
+`--pack` adds the local files of the format material pack in
+[openplayx-test](https://github.com/openplayx/openplayx-test) `formats/`
+(ALL-370) as samples named `pack-<issue>-<ext>`, tagged with their Linear
+issues; expectations come from ffprobe and its 440 Hz tone. Its moving test
+pattern has no reference frame, so these samples get no snapshot comparison.
 
 The run writes `build/formats/<timestamp>/report.md` (plus `results.json`,
 snapshots and the Flutter log) and exits non-zero when a sample fails.
