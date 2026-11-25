@@ -4,15 +4,18 @@
 # These tests are not part of `flutter test` and do not run by default; run
 # them when this package changes (see README).
 #
-# Usage: tool/test_formats.sh [--only ID[,ID|GLOB...]] [--device macos]
+# Usage: tool/test_formats.sh [--only ID[,ID|GLOB...]] [--pack] [--device macos]
 # Env:   OPX_SAMPLE_CACHE  sample cache (default ~/.cache/openplayx-libvlc-samples)
 #        OPX_REPORT_DIR    report directory (default build/formats/<timestamp>)
+#        OPX_FORMAT_PACK   material pack for --pack (default ../openplayx-test/formats;
+#                          its samples are "pack-<issue>-<ext>", e.g. --only 'pack-*')
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
-only="" device="macos"
+only="" pack="" device="macos"
 while [ $# -gt 0 ]; do
   case "$1" in
     --only) only="$2"; shift 2 ;;
+    --pack) pack="${OPX_FORMAT_PACK:-$root/../openplayx-test/formats}"; shift ;;
     --device) device="$2"; shift 2 ;;
     *) echo "unknown argument $1" >&2; exit 2 ;;
   esac
@@ -26,7 +29,7 @@ mkdir -p "$report"
 report="$(cd "$report" && pwd)"
 
 echo "== samples ($cache)"
-python3 -I "$root/tool/prepare_samples.py" --cache "$cache" --out "$report/samples.json" ${only:+--only "$only"}
+python3 -I "$root/tool/prepare_samples.py" --cache "$cache" --out "$report/samples.json" ${only:+--only "$only"} ${pack:+--pack "$pack"}
 
 # The host app is restarted every $batch samples, and every failed sample is
 # then run once more alone: a player can disturb later players in the same

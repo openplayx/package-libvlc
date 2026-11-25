@@ -8,7 +8,13 @@ another prepared sample. Every result is checked with ffprobe (the real
 container/codecs, not the extension) and written to a resolved list that the
 integration test (example/integration_test/formats_test.dart) reads.
 
-Usage: prepare_samples.py --cache DIR --out FILE [--only ID[,ID...]]
+With --pack DIR, the local media of the format material pack (openplayx-test
+formats/, ALL-370) is added as samples "pack-<issue>-<ext>": expectations come
+from ffprobe; the pack's synthetic audio is a 440 Hz tone and its moving test
+pattern has no reference frame. Subtitle-only files and external candidates
+are left out (external candidates need a license check first).
+
+Usage: prepare_samples.py --cache DIR --out FILE [--only ID[,ID...]] [--pack DIR]
 """
 from __future__ import annotations
 
@@ -138,17 +144,89 @@ def reference(size: str, refs: pathlib.Path) -> pathlib.Path:
     return path
 
 
+PACK_TONE_HZ = 440
+# Pack files whose audio is not the 440 Hz sine (the MOD tone is set by its
+# note period).
+PACK_NO_TONE = {"fixtures/audio/tone.mod"}
+PACK_URL = "http://127.0.0.1:8765/fixtures/"
+
+
+def pack_samples(pack: pathlib.Path) -> list[dict]:
+    """One sample per local pack file (issues sharing a file are merged)."""
+    by_path: dict[str, dict] = {}
+    for t in json.loads((pack / "manifest.json").read_text())["tasks"]:
+        if t["status"] not in ("local_media", "local_reference"):
+            continue
+        streams = {st["codec_type"] for st in (t.get("probe") or {}).get("streams", [])}
+        if t["status"] == "local_media" and not streams & {"video", "audio"}:
+            continue  # standalone subtitles: no playback test of their own
+        s = by_path.get(t["path"])
+        if s:
+            s["linear"].append(t["issue"])
+            continue
+        ext = pathlib.Path(t["path"]).suffix.lstrip(".").lower()
+        by_path[t["path"]] = {"id": f"pack-{t['issue'].lower()}-{ext}", "ext": ext, "linear": [t["issue"]],
+                              "pack": t["path"], "sha256": t["sha256"], "note": t["format"],
+                              "pack_probe": t.get("probe")}
+    return list(by_path.values())
+
+
+def from_pack_probe(data: dict) -> dict:
+    """probe() fields from the pack's recorded ffprobe output, for files the
+    local ffprobe cannot read (MOD needs libopenmpt)."""
+    video = next((st for st in data["streams"] if st["codec_type"] == "video"), None)
+    audio = next((st for st in data["streams"] if st["codec_type"] == "audio"), None)
+    return {"container": data["format"]["format_name"],
+            "duration_ms": round(float(data["format"].get("duration") or 0) * 1000),
+            "video_codec": video and video["codec_name"], "pix_fmt": video and video.get("pix_fmt"),
+            "width": video and video.get("width"), "height": video and video.get("height"), "sar": None,
+            "audio_codec": audio and audio["codec_name"], "channels": None, "sample_rate": None}
+
+
+def copy_pack(pack: pathlib.Path, media: pathlib.Path) -> pathlib.Path:
+    """Copies the pack fixtures into the cache; references are rewritten from
+    the pack's local HTTP server to file URIs of the copies."""
+    dest = media / "pack"
+    for src in (pack / "fixtures").rglob("*"):
+        if not src.is_file():
+            continue
+        out = dest / src.relative_to(pack)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        if src.parent.name == "reference" and src.suffix in (".pls", ".asx", ".strm"):
+            out.write_text(src.read_text().replace(PACK_URL, (dest / "fixtures").as_uri() + "/"))
+        elif not out.exists() or out.stat().st_size != src.stat().st_size:
+            shutil.copyfile(src, out)
+    return dest
+
+
+def reference_target(path: pathlib.Path) -> pathlib.Path | None:
+    """The media file a pack reference (pls, asx, strm, cue) points at."""
+    text = path.read_text()
+    if path.suffix == ".cue":
+        return path.parent / text.split('"')[1]
+    for token in text.replace('"', " ").replace("=", " ").split():
+        if token.startswith("file://"):
+            return pathlib.Path(urllib.request.url2pathname(token[len("file://"):]))
+    return None
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--cache", required=True, type=pathlib.Path)
     ap.add_argument("--out", required=True, type=pathlib.Path)
     ap.add_argument("--only", default="", help="comma-separated ids or glob patterns")
+    ap.add_argument("--pack", type=pathlib.Path, help="format material pack (openplayx-test/formats)")
     a = ap.parse_args()
     for tool in ("ffmpeg", "ffprobe"):
         if not shutil.which(tool):
             print(f"{tool} is required (brew install ffmpeg)", file=sys.stderr)
             return 2
     samples = json.loads(MANIFEST.read_text())["samples"]
+    if a.pack:
+        if not (a.pack / "manifest.json").exists():
+            print(f"no manifest.json in {a.pack}", file=sys.stderr)
+            return 2
+        samples += pack_samples(a.pack)
     by_id = {s["id"]: s for s in samples}
     patterns = [p for p in a.only.split(",") if p]
     wanted = [s for s in samples if not patterns or any(fnmatch.fnmatch(s["id"], p) for p in patterns)]
@@ -159,8 +237,22 @@ def main() -> int:
     refs = a.cache / "refs"
     media.mkdir(parents=True, exist_ok=True)
     refs.mkdir(parents=True, exist_ok=True)
+    pack_copy = copy_pack(a.pack, media) if a.pack and any("pack" in s for s in wanted) else None
 
     def prepare(s: dict) -> tuple[pathlib.Path, dict]:
+        if "pack" in s:
+            if sha256(a.pack / s["pack"]) != s["sha256"]:
+                raise RuntimeError(f"sha256 mismatch for {s['pack']}")
+            dest = pack_copy / s["pack"]
+            target = reference_target(dest) if dest.parent.name == "reference" else dest
+            if target is None:
+                raise RuntimeError(f"no media reference in {s['pack']}")
+            try:
+                return dest, probe(target)
+            except RuntimeError:
+                if target != dest or not s.get("pack_probe"):
+                    raise
+                return dest, from_pack_probe(s["pack_probe"])
         dest = media / f"{s['id']}.{s['ext']}"
         if "playlist" in s:
             target, info = prepare(by_id[s["playlist"]])
@@ -178,12 +270,13 @@ def main() -> int:
         try:
             path, info = prepare(s)
             target = by_id[s["playlist"]] if "playlist" in s else s
+            pack_tone = "pack" in s and info["audio_codec"] and s["pack"] not in PACK_NO_TONE
             expect = {
                 "video": bool(info["video_codec"]),
                 "audio": bool(info["audio_codec"]),
                 "seek": True,
                 "frame": None,
-                "tone_hz": TONE_HZ if "generate" in target and info["audio_codec"] else None,
+                "tone_hz": TONE_HZ if "generate" in target and info["audio_codec"] else PACK_TONE_HZ if pack_tone else None,
                 # Generated samples have a known length; ffprobe only estimates
                 # raw elementary streams.
                 "duration_ms": SECONDS * 1000 if "generate" in target else info["duration_ms"] or None,
