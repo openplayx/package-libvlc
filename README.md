@@ -5,8 +5,7 @@ English | [简体中文](README.zh-CN.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 The libVLC playback adapter of [OpenPlayX](https://github.com/openplayx/openplayx),
-plus the file format playback tests that decide which formats OpenPlayX can
-claim to play.
+with playback integration tests maintained in the companion package-media repository.
 
 ```
 OpenPlayX app → PlayerBackend (lib/playback.dart) → LibVlcBackend → vlc_player 2.1.2 → libVLC (VLCKit 3.7.3 on Apple)
@@ -40,77 +39,27 @@ format tests use it to write decoded audio to a file.
 
 ## File format playback tests
 
-The tests do **not** run by default (they are not under `test/`, and the app's
-CI does not run them). Run them when this package changes: the adapter, the
-`vlc_player` version, the libVLC/VLCKit build or `formats/`.
+Playback integration tests, the sample manifest, preparation scripts and report
+generator are maintained in [package-media](https://github.com/openplayx/package-media/blob/main/README.md#file-format-playback-tests).
+Run the shared host with the libVLC engine:
 
 ```sh
-brew install ffmpeg                       # sample generation and ffprobe
-tool/test_formats.sh                      # all samples, macOS
-tool/test_formats.sh --only 'mp4-*,mp3'   # ids or globs
-tool/test_formats.sh --pack --only 'pack-*'  # material pack samples (../openplayx-test/formats)
+cd ../package-media
+bash tool/test_formats.sh --engine vlc
+bash tool/test_formats.sh --engine vlc --pack --only 'pack-*'
 ```
 
-`--pack` adds the local files of the format material pack in
-[openplayx-test](https://github.com/openplayx/openplayx-test) `formats/`
-(ALL-370) as samples named `pack-<issue>-<ext>`, tagged with their Linear
-issues; expectations come from ffprobe and its 440 Hz tone. Its moving test
-pattern has no reference frame, so these samples get no snapshot comparison.
+Reports are written under package-media’s `build/formats/`, unless
+`OPX_REPORT_DIR` is set.
 
-The run writes `build/formats/<timestamp>/report.md` (plus `results.json`,
-snapshots and the Flutter log) and exits non-zero when a sample fails.
-
-### What a sample is
-
-[`formats/manifest.json`](formats/manifest.json) lists the samples with the
-Linear issues they verify. `tool/prepare_samples.py` prepares them into
-`~/.cache/openplayx-libvlc-samples` (`OPX_SAMPLE_CACHE`), never into the
-repository:
-
-- `generate`: encoded locally with ffmpeg from SMPTE colour bars (320×240,
-  25 fps) and a 1 kHz stereo tone, 6 s. No licensing questions, and the test
-  knows exactly what the picture and the sound must be.
-- `url` + `sha256`: downloaded (retried, size-limited) and verified.
-- `playlist`: a pls/m3u/asx/cue file pointing at another sample.
-
-Every prepared file is checked with ffprobe, so the real container and codecs
-are recorded instead of trusting the extension.
-
-### What is checked
-
-Each sample plays through `LibVlcBackend` in the `example/` host app, so the
-result covers the same libVLC build and options as OpenPlayX:
-
-| Check | Catches |
-|---|---|
-| playing state and advancing time | does not open, does not start |
-| decoder statistics over 1 s (re-measured once) | black screen, stalled or dropping video, stalled or lost audio |
-| tracks found by libVLC | missing video or audio track |
-| snapshot vs. the SMPTE bars (mean RGB difference on a 32×24 grid, limit 24) | corrupt pictures, green/grey frames, wrong colours |
-| decoded audio written with libVLC's `afile` output: RMS and frequency vs. the 1 kHz tone | silence, noise, wrong decoding |
-| duration and video size | wrong timing or dimensions |
-| seek to the middle, then play on to the end | seek failures, playback stopping early after a seek |
-
-Limits: the bars are a still picture, so damage only shows when it hits a
-keyframe (a corrupted keyframe scores ~87, clean samples ~9); the snapshot is
-the decoded picture, not what Flutter renders (HDR
-tone mapping and on-screen colour need their own tests); `afile` measures the
-decoded audio, not the device output (passthrough needs a receiver).
-
-### Known issues
-
-- A player can disturb later players in the same process: after about 30 s of
-  playback by earlier (disposed) players, or one raw `.m2v` stream, later
-  videos drop most pictures. The run therefore restarts the host app every 6
-  samples (`OPX_BATCH`) and reruns each failed sample alone; the report marks
-  samples that passed only alone. Under investigation; it may affect the app
-  when many videos play in one session.
+See [sample preparation and checks](https://github.com/openplayx/package-media/blob/main/formats/README.md).
+Adapter unit tests remain here: `flutter test`.
 
 ## Development
 
 ```sh
 flutter analyze                           # package
-(cd example && flutter analyze)           # host app and tests
+(cd example && flutter analyze)           # example host app
 ```
 
 ## License

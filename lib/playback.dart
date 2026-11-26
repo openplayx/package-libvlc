@@ -151,6 +151,11 @@ abstract class PlayerBackend extends ValueNotifier<PlayerSnapshot> {
   /// Null while no statistics are available for the current media.
   Future<PlayerStats?> getStats() => Future.error(UnsupportedError('stats'));
   Widget buildVideo();
+
+  /// iOS sample-buffer PiP needs the current native video output. Other
+  /// platforms put the existing player window/activity into PiP instead.
+  bool get supportsPictureInPictureOutput => false;
+  Future<int?> pictureInPictureHandle() async => null;
 }
 
 class LibVlcBackend extends PlayerBackend {
