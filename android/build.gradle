@@ -64,14 +64,16 @@ def verifiedCache = abis.every { abi ->
     }.result.get()
     return verification.exitValue == 0
 }
-if (!verifiedCache) {
+def bindings = new File(packageRoot, 'third_party/libvlcjni/libvlc')
+def bindingsReady = new File(bindings, 'src/org/videolan/libvlc/LibVLC.java').isFile() &&
+        new File(bindings, 'assets/lua').isDirectory()
+if (!verifiedCache || !bindingsReady) {
     def result = providers.exec {
         commandLine 'bash', new File(packageRoot, 'tool/ensure_libvlc_android.sh').path, *abis
         environment 'ANDROID_NDK_HOME', ndk
     }.result.get()
     result.assertNormalExitValue()
 }
-def bindings = new File(packageRoot, 'third_party/libvlcjni/libvlc')
 android.sourceSets.main {
     java.srcDirs = [new File(bindings, 'src')]
     res.srcDirs = [new File(bindings, 'res')]

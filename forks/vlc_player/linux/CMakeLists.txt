@@ -64,7 +64,8 @@ set(vlc_player_bundled_libraries
 # VLC's module directory instead of flattening every .so into lib/.
 set_target_properties(${PLUGIN_NAME} PROPERTIES INSTALL_RPATH "$ORIGIN")
 function(opx_install_vlc_plugins prefix)
-  install(DIRECTORY "${prefix}/lib/vlc" DESTINATION lib COMPONENT Runtime)
+  install(DIRECTORY "${prefix}/lib/vlc/plugins" DESTINATION lib/vlc COMPONENT Runtime
+    PATTERN "*.la" EXCLUDE)
 endfunction()
 cmake_language(EVAL CODE
   "cmake_language(DEFER DIRECTORY \"${CMAKE_SOURCE_DIR}\" CALL opx_install_vlc_plugins \"${OPX_VLC_PREFIX}\")")

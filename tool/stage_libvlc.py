@@ -17,7 +17,8 @@ if target.startswith('linux-'):
     for lib in runtime:
         if lib.is_symlink():
             continue
-        subprocess.run(['patchelf', '--set-rpath', '$ORIGIN', str(lib)], check=True)
+        rpath = '$ORIGIN:$ORIGIN/..' if lib.parent.name == 'vlc' else '$ORIGIN'
+        subprocess.run(['patchelf', '--set-rpath', rpath, str(lib)], check=True)
         soname = subprocess.check_output(['patchelf', '--print-soname', str(lib)], text=True).strip()
         out = bundle / soname
         shutil.copy2(lib, out)
