@@ -7,3 +7,9 @@ build/
 # Python interpreter caches
 __pycache__/
 *.pyc
+
+# Native source and build caches
+/third_party/
+macos/Frameworks/
+ios/Frameworks/
+tvos/Frameworks/

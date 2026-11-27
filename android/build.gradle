@@ -1,0 +1,84 @@
+// Java/JNI bindings and native VLC are built together from pinned sources.
+group = 'org.openplayx.playback'
+version = '0.1.0'
+buildscript {
+    repositories { google(); mavenCentral() }
+    dependencies { classpath 'com.android.tools.build:gradle:8.7.3' }
+}
+apply plugin: 'com.android.library'
+
+// Flutter derives JVM edges from Dart imports. The Dart adapter imports
+// vlc_player, but this project's native bindings do not: vlc_player consumes
+// these bindings in the opposite direction. Keep that JVM dependency one-way.
+configurations.configureEach {
+    withDependencies { dependencies ->
+        dependencies.removeAll { dependency ->
+            dependency instanceof ProjectDependency && dependency.name == 'vlc_player'
+        }
+    }
+}
+
+def packageRoot = file('..').canonicalFile
+def abiByPlatform = ['android-arm': 'armeabi-v7a', 'android-arm64': 'arm64-v8a', 'android-x64': 'x86_64']
+def platforms = project.findProperty('target-platform')
+def abis = platforms == null ? ['arm64-v8a', 'armeabi-v7a', 'x86_64'] :
+        platforms.toString().split(',').collect { abiByPlatform[it.trim()] }.findAll { it != null }
+
+def revisions = new Properties()
+new File(packageRoot, 'tool/vlc-sources.env').withInputStream { revisions.load(it) }
+
+android {
+    namespace = 'org.videolan'
+    compileSdk = 36
+    defaultConfig {
+        minSdk = 29
+        resValue 'string', 'build_libvlc_revision', revisions.getProperty('LIBVLCJNI_REVISION').take(12)
+        resValue 'string', 'build_vlc_revision', revisions.getProperty('ANDROID_VLC_REVISION').take(12)
+    }
+    buildFeatures { buildConfig = true; resValues = true }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+// As with Apple podspecs, materialize native inputs before Gradle discovers
+// source files or configures consumers' CMake builds.
+def ndk = System.getenv('ANDROID_NDK_HOME') ?: android.ndkDirectory.path
+def ffmpegRoot = new File(System.getenv('OPX_FFMPEG_PACKAGE') ?: new File(packageRoot, '../ffmpeg-package').path).canonicalFile
+// Other ABIs may be building in the shared native worktree. Reuse this ABI's
+// completed artifacts only after both its recipe fingerprint and ELF checks
+// pass; a missing, stale or invalid cache still takes the normal build lock.
+def verifiedCache = abis.every { abi ->
+    def target = "android-${abi}"
+    def prefix = new File(packageRoot, "third_party/libvlc/${target}")
+    def stamp = new File(prefix, 'BUILD_FINGERPRINT')
+    if (!stamp.isFile()) return false
+    def expected = providers.exec {
+        commandLine 'bash', new File(packageRoot, 'tool/build_fingerprint.sh').path, target
+    }.standardOutput.asText.get().trim()
+    if (stamp.text.trim() != expected) return false
+    def verification = providers.exec {
+        commandLine 'python3', new File(packageRoot, 'tool/verify_libvlc.py').path,
+                target, prefix.path, new File(ffmpegRoot, "third_party/ffmpeg/${target}").path
+        ignoreExitValue = true
+    }.result.get()
+    return verification.exitValue == 0
+}
+if (!verifiedCache) {
+    def result = providers.exec {
+        commandLine 'bash', new File(packageRoot, 'tool/ensure_libvlc_android.sh').path, *abis
+        environment 'ANDROID_NDK_HOME', ndk
+    }.result.get()
+    result.assertNormalExitValue()
+}
+def bindings = new File(packageRoot, 'third_party/libvlcjni/libvlc')
+android.sourceSets.main {
+    java.srcDirs = [new File(bindings, 'src')]
+    res.srcDirs = [new File(bindings, 'res')]
+    jniLibs.srcDirs = abis.collect { new File(packageRoot, "third_party/libvlc/android-${it}/jniLibs") }
+    assets.srcDirs = [new File(bindings, 'assets')]
+}
+dependencies {
+    api 'androidx.annotation:annotation:1.9.1'
+    api 'androidx.legacy:legacy-support-v4:1.0.0'
+}

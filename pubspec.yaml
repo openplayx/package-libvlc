@@ -7,8 +7,22 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  # Pinned exactly: the format tests describe this libVLC build.
-  vlc_player: 2.1.2
+  # Pinned Dart API; Native libraries are built against package-ffmpeg.
+  vlc_player:
+    path: forks/vlc_player
+  openplayx_ffmpeg:
+    path: ../ffmpeg-package
 dev_dependencies:
   flutter_test:
     sdk: flutter
+flutter:
+  plugin:
+    platforms:
+      android:
+        ffiPlugin: true
+      macos:
+        ffiPlugin: true
+      ios:
+        ffiPlugin: true
+      tvos:
+        ffiPlugin: true
