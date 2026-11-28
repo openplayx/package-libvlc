@@ -79,7 +79,7 @@ if [[ "$target" = linux-* ]]; then
 else
   export PKG_CONFIG_LIBDIR="$PKG_CONFIG_PATH"
 fi
-build="$root/third_party/vlc-build/$target"
+build="${OPX_VLC_BUILD_DIR:-$root/third_party/vlc-build/$target}"
 mkdir -p "$build"
 flags=(--host="$host" --prefix="$prefix" --with-contrib="$contrib"
   --enable-shared --disable-static --disable-vlc --disable-nls --disable-dbus

@@ -67,7 +67,8 @@ bash tool/build_libvlc.sh windows-x86_64  # in MSYS2
 ```
 
 Desktop build entry points check contrib packages individually and retain passed
-results. Compiler, source or global flag changes invalidate core objects; package
+results. `OPX_VLC_BUILD_DIR` can retain core objects outside workspace cleanup.
+Compiler, source or global flag changes invalidate core objects; package
 recipe changes rebuild affected dependencies and relink existing plugin objects.
 
 Check an idle, already bootstrapped contrib tree independently, using the same

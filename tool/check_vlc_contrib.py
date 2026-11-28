@@ -254,6 +254,7 @@ def main() -> int:
                     before = stamp.stat().st_mtime_ns if stamp.exists() else None
                     log = (report / f'{current}.log').open('w', encoding='utf-8')
                     rows[current]['status'] = 'running'
+                    atomic_json(report / 'summary.json', summary)
                     print(f'checking {current}...', flush=True)
                 elif line.startswith('OPX_DONE|'):
                     name = line.strip().split('|', 1)[1]

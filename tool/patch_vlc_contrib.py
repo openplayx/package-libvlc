@@ -93,6 +93,15 @@ def patch(source: Path):
         spatial.write_text(text + '\n' + marker + '\nifdef HAVE_WIN32\n'
                            'SPATIALAUDIO_CONF += -DCMAKE_CXX_FLAGS="$(CXXFLAGS) -DMYSOFA_STATIC"\n'
                            'endif\n')
+    # FindZLIB otherwise prefers the system import archive. libarchive then
+    # emits ZLIB_DLL imports, while VLC's plugin links the static zlib archive.
+    archive = source / 'contrib/src/libarchive/rules.mak'
+    text = archive.read_text()
+    marker = '# OpenPlayX: static zlib consumer on Windows.'
+    if marker not in text:
+        archive.write_text(text + '\n' + marker + '\nifdef HAVE_WIN32\n'
+                           'LIBARCHIVE_CONF += -DZLIB_USE_STATIC_LIBS=ON\n'
+                           'endif\n')
     # CMake's host FPU query reports false for native Linux AArch64. The
     # selected NEON64 decoder requires floating point on every ARM64 target.
     mpg_patch = source / 'contrib/src/mpg123/opx-arm64-fpu.patch'
