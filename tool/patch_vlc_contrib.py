@@ -19,6 +19,15 @@ def patch(source: Path):
     if marker not in text:
         rule.write_text(text + '\n' + marker + '\nPKGS_FOUND += ffmpeg\nDEPS_ffmpeg :=\n')
 
+    # MSYS2 emulates symlinks by copying their targets. FluidLite's unused
+    # example/FluidLite -> .. link recurses into itself during extraction.
+    # Keep every library source file while omitting only that example link.
+    fluidlite = source / 'contrib/src/fluidlite/rules.mak'
+    text = fluidlite.read_text()
+    unpack = "\t$(RM) -R $@ $(UNPACK_DIR) && tar --exclude='$(UNPACK_DIR)/example/FluidLite' -xJof $<"
+    if '\t$(UNPACK)\n' in text:
+        fluidlite.write_text(text.replace('\t$(UNPACK)\n', unpack + '\n'))
+
     # SID's byte lookup tables assume signed char, as on its original x86
     # targets. Preserve those values on ARM instead of dropping SID support.
     sid = source / 'contrib/src/sidplay2/rules.mak'
