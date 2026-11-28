@@ -24,6 +24,11 @@ export OPX_FFMPEG_PACKAGE="$(cd "${OPX_FFMPEG_PACKAGE:-$root/../ffmpeg-package}"
 export OPX_BUILD_JOBS="${OPX_BUILD_JOBS:-$(getconf _NPROCESSORS_ONLN)}"
 opx_lock "$root/third_party/.lock-$target"
 opx_ensure_ffmpeg "$target"
+# VLC 3.x and its legacy C dependencies predate C23's prototype rules.
+# GCC 15+ defaults to C23, which breaks e.g. GNU regex 0.13's declarations.
+if [[ "$target" = windows-* ]]; then
+  export CFLAGS="${CFLAGS:--O2 -g} -std=gnu17"
+fi
 ffmpeg="$OPX_FFMPEG_PACKAGE/third_party/ffmpeg/$target"
 prefix="$root/third_party/libvlc/$target"
 fingerprint="$(bash "$root/tool/build_fingerprint.sh" "$target")"
