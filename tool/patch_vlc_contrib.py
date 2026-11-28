@@ -28,6 +28,14 @@ def patch(source: Path):
     if '\t$(UNPACK)\n' in text:
         fluidlite.write_text(text.replace('\t$(UNPACK)\n', unpack + '\n'))
 
+    # The upstream tarball also contains a test MP3 link to its author's
+    # /home/ec2-user directory. It is neither shipped nor used by the library.
+    live555 = source / 'contrib/src/live555/rules.mak'
+    text = live555.read_text()
+    unpack = "\t$(RM) -R $@ $(UNPACK_DIR) && tar --exclude='live/testProgs/whiteroom.mp3' -xzof $<"
+    if '\t$(UNPACK)\n' in text:
+        live555.write_text(text.replace('\t$(UNPACK)\n', unpack + '\n'))
+
     # SID's byte lookup tables assume signed char, as on its original x86
     # targets. Preserve those values on ARM instead of dropping SID support.
     sid = source / 'contrib/src/sidplay2/rules.mak'
