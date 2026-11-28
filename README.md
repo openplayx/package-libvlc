@@ -66,6 +66,22 @@ bash tool/build_libvlc.sh linux-arm64  # on a matching Linux host
 bash tool/build_libvlc.sh windows-x86_64  # in MSYS2
 ```
 
+Check an idle, already bootstrapped contrib tree package by package, using the
+same compiler environment as its original build:
+
+```sh
+CFLAGS='-O2 -g -std=gnu17' python3 -X utf8 tool/check_vlc_contrib.py --directory "$OPX_VLC_SOURCE_DIR/contrib/opx-windows-x86_64" --report build/dependency-checks --adopt-existing
+CFLAGS='-O2 -g -std=gnu17' python3 -X utf8 tool/check_vlc_contrib.py --directory "$OPX_VLC_SOURCE_DIR/contrib/opx-windows-x86_64" --report build/sid-check --only sidplay2
+```
+
+Use `--adopt-existing` only on first use of an existing, previously verified
+cache. Each package has its own log and result in `summary.json`; the first
+failure stops the run. Successful packages remain cached when resuming.
+`--rebuild sidplay2` or a changed package recipe invalidates that package and
+its dependents, preserving unrelated packages. Compiler/configuration changes
+require a separate source cache. System-provided libraries are not rebuilt by
+this check; final DLL/ELF verification and playback tests remain separate.
+
 ## Usage
 
 The app uses it as a sibling path dependency (CI checks it out as the

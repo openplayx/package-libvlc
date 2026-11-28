@@ -58,6 +58,19 @@ bash tool/build_libvlc.sh linux-arm64       # 在对应架构的 Linux 主机运
 bash tool/build_libvlc.sh windows-x86_64    # 在 MSYS2 中运行
 ```
 
+在空闲、已 bootstrap 的 contrib 缓存上，可用与原构建相同的编译环境逐包检查：
+
+```sh
+CFLAGS='-O2 -g -std=gnu17' python3 -X utf8 tool/check_vlc_contrib.py --directory "$OPX_VLC_SOURCE_DIR/contrib/opx-windows-x86_64" --report build/dependency-checks --adopt-existing
+CFLAGS='-O2 -g -std=gnu17' python3 -X utf8 tool/check_vlc_contrib.py --directory "$OPX_VLC_SOURCE_DIR/contrib/opx-windows-x86_64" --report build/sid-check --only sidplay2
+```
+
+仅在首次接管已验证过的旧缓存时使用 `--adopt-existing`。每个包有独立日志，
+`summary.json` 逐项记录结果，首次失败即停止；恢复时保留已通过的包。
+`--rebuild sidplay2` 或包配方变化只使该包及其依赖方失效，不清空其他包。
+编译器或配置变化需要独立源码缓存。系统提供的库不在这里重编，最终 DLL / ELF
+依赖检查和播放冒烟仍需分别通过。
+
 ## 使用
 
 App 以同级目录 path 依赖引用（CI 以 `package-libvlc` companion 检出）：
