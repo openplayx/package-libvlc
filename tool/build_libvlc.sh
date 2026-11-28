@@ -71,6 +71,14 @@ python3 -X utf8 -I "$root/tool/check_vlc_contrib.py" "${dependency_args[@]}"
 rm -f "$contrib"/lib/libav*.a "$contrib"/lib/libsw*.a
 rm -f "$contrib"/lib/pkgconfig/libav*.pc "$contrib"/lib/pkgconfig/libsw*.pc
 rm -rf "$contrib"/include/libav* "$contrib"/include/libsw*
+if [[ "$target" = windows-* ]]; then
+  # Explicit -lgcc_s from CMake's implicit C++ libraries overrides
+  # -static-libgcc and imports libgcc_s_seh-1.dll (for example libgme.pc).
+  for metadata in "$contrib"/lib/pkgconfig/*.pc "$contrib"/lib/*.la; do
+    [ -f "$metadata" ] || continue
+    sed -i 's/[[:space:]]*-lgcc_s\b//g' "$metadata"
+  done
+fi
 export PKG_CONFIG_PATH="$contrib/lib/pkgconfig:$OPX_FFMPEG_PKGCONFIG"
 if [[ "$target" = linux-* ]]; then
   # Native desktop SDKs (PulseAudio/ALSA/GTK) are system dependencies; FFmpeg
