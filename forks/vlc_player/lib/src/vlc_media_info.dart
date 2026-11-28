@@ -97,10 +97,8 @@ class VlcMediaInfo {
       return const <VlcMediaTrackInfo>[];
     }
     return value
-        .whereType<Map>()
-        .map(
-          (track) => VlcMediaTrackInfo.fromMap(track.cast<Object?, Object?>()),
-        )
+        .whereType<Map<Object?, Object?>>()
+        .map(VlcMediaTrackInfo.fromMap)
         .toList(growable: false);
   }
 

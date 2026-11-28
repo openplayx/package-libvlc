@@ -824,11 +824,8 @@ class _VlcPlayerController extends VlcPlayerController
       return const <VlcTrackDescription>[];
     }
     return value
-        .whereType<Map>()
-        .map(
-          (track) =>
-              VlcTrackDescription.fromMap(track.cast<Object?, Object?>()),
-        )
+        .whereType<Map<Object?, Object?>>()
+        .map(VlcTrackDescription.fromMap)
         .toList(growable: false);
   }
 
@@ -976,7 +973,7 @@ class _VlcPlayerController extends VlcPlayerController
     final viewId = _viewId;
     _viewId = null;
     _textureId = null;
-    _eventsSubscription?.cancel();
+    unawaited(_eventsSubscription?.cancel());
     _eventsSubscription = null;
     _cancelPendingThrottledValue();
     if (viewId != null) {

@@ -1,21 +1,30 @@
 import Cocoa
-import FlutterMacOS
-import VLCKit
+@preconcurrency import FlutterMacOS
+@preconcurrency import VLCKit
 
-public class VlcPlayerPlugin: NSObject, FlutterPlugin {
+// Flutter delivers plugin registration, method calls, platform-view creation and
+// stream-handler callbacks on the platform (main) thread, and VLCKit 3 posts its
+// VLCMediaPlayerDelegate notifications on the main thread too, so every type here
+// is main-actor isolated. The Flutter/VLCKit protocols are not annotated, hence the
+// @preconcurrency conformances.
+@MainActor
+public class VlcPlayerPlugin: NSObject, @preconcurrency FlutterPlugin {
   private let messenger: FlutterBinaryMessenger
   private let methodChannel: FlutterMethodChannel
   private var players: [Int64: VlcPlayerPlatformView] = [:]
 
-  public static func register(with registrar: FlutterPluginRegistrar) {
-    let instance = VlcPlayerPlugin(binaryMessenger: registrar.messenger)
-    let factory = VlcPlayerViewFactory(messenger: registrar.messenger) { [weak instance] viewId, player in
-      instance?.players.removeValue(forKey: viewId)?.dispose()
-      instance?.players[viewId] = player
-    }
+  // Called from the app's nonisolated GeneratedPluginRegistrant, always on the main thread.
+  public nonisolated static func register(with registrar: FlutterPluginRegistrar) {
+    MainActor.assumeIsolated {
+      let instance = VlcPlayerPlugin(binaryMessenger: registrar.messenger)
+      let factory = VlcPlayerViewFactory(messenger: registrar.messenger) { [weak instance] viewId, player in
+        instance?.players.removeValue(forKey: viewId)?.dispose()
+        instance?.players[viewId] = player
+      }
 
-    registrar.addMethodCallDelegate(instance, channel: instance.methodChannel)
-    registrar.register(factory, withId: "plugins.lingjhf.com/vlc_player/view")
+      registrar.addMethodCallDelegate(instance, channel: instance.methodChannel)
+      registrar.register(factory, withId: "plugins.lingjhf.com/vlc_player/view")
+    }
   }
 
   init(binaryMessenger: FlutterBinaryMessenger) {
@@ -41,8 +50,10 @@ public class VlcPlayerPlugin: NSObject, FlutterPlugin {
       return
     }
 
-    DispatchQueue.main.async {
-      self.handle(call.method, arguments: arguments, player: player, result: result)
+    // Deferred to the next main-actor turn, as before (was DispatchQueue.main.async).
+    let method = call.method
+    Task { @MainActor in
+      self.handle(method, arguments: arguments, player: player, result: result)
     }
   }
 
@@ -180,15 +191,9 @@ public class VlcPlayerPlugin: NSObject, FlutterPlugin {
   }
 
   private func disposePlayer(viewId: Int64, result: FlutterResult? = nil) {
-    let dispose = {
-      self.players.removeValue(forKey: viewId)?.dispose()
-      result?(nil)
-    }
-    if Thread.isMainThread {
-      dispose()
-    } else {
-      DispatchQueue.main.async(execute: dispose)
-    }
+    // Main-actor isolated, so this always ran the synchronous main-thread branch.
+    players.removeValue(forKey: viewId)?.dispose()
+    result?(nil)
   }
 
   private static func disposedError() -> FlutterError {
@@ -217,7 +222,8 @@ public class VlcPlayerPlugin: NSObject, FlutterPlugin {
   }
 }
 
-final class VlcPlayerViewFactory: NSObject, FlutterPlatformViewFactory {
+@MainActor
+final class VlcPlayerViewFactory: NSObject, @preconcurrency FlutterPlatformViewFactory {
   private let messenger: FlutterBinaryMessenger
   private let onCreate: (Int64, VlcPlayerPlatformView) -> Void
 
@@ -248,7 +254,8 @@ final class VlcPlayerViewFactory: NSObject, FlutterPlatformViewFactory {
   }
 }
 
-final class VlcPlayerPlatformView: NSObject, VLCMediaPlayerDelegate {
+@MainActor
+final class VlcPlayerPlatformView: NSObject, @preconcurrency VLCMediaPlayerDelegate {
   let view: VlcPlayerContainerView
 
   private let mediaPlayer: VLCMediaPlayer
@@ -361,23 +368,27 @@ final class VlcPlayerPlatformView: NSObject, VLCMediaPlayerDelegate {
     try? FileManager.default.removeItem(at: url)
     mediaPlayer.saveVideoSnapshot(at: url.path, withWidth: Int32(width), andHeight: Int32(height))
 
-    DispatchQueue.global(qos: .userInitiated).async {
-      for _ in 0..<40 {
-        if let data = try? Data(contentsOf: url), !data.isEmpty {
-          try? FileManager.default.removeItem(at: url)
-          DispatchQueue.main.async {
-            result(FlutterStandardTypedData(bytes: data))
-          }
-          return
-        }
-        Thread.sleep(forTimeInterval: 0.05)
-      }
-
-      try? FileManager.default.removeItem(at: url)
-      DispatchQueue.main.async {
+    // Poll for the file off the main thread; reply on the main actor.
+    Task { @MainActor in
+      if let data = await Self.waitForSnapshotData(at: url) {
+        result(FlutterStandardTypedData(bytes: data))
+      } else {
         result(FlutterError(code: "snapshot_failed", message: "VLC did not produce snapshot image data.", details: nil))
       }
     }
+  }
+
+  /// Polls up to ~2 s for VLC to write the snapshot, then deletes the file.
+  /// Nonisolated async, so it runs on the global concurrent executor, not the main thread.
+  private nonisolated static func waitForSnapshotData(at url: URL) async -> Data? {
+    defer { try? FileManager.default.removeItem(at: url) }
+    for _ in 0..<40 {
+      if let data = try? Data(contentsOf: url), !data.isEmpty {
+        return data
+      }
+      try? await Task.sleep(nanoseconds: 50_000_000)
+    }
+    return nil
   }
 
   func getAudioTracks() -> [[String: Any?]] {
@@ -672,7 +683,8 @@ final class VlcPlayerPlatformView: NSObject, VLCMediaPlayerDelegate {
 
 final class VlcPlayerContainerView: VLCVideoView {}
 
-final class VlcPlayerEventStreamHandler: NSObject, FlutterStreamHandler {
+@MainActor
+final class VlcPlayerEventStreamHandler: NSObject, @preconcurrency FlutterStreamHandler {
   private var eventSink: FlutterEventSink?
   var onListen: (() -> Void)?
   var isListening: Bool {
@@ -691,7 +703,8 @@ final class VlcPlayerEventStreamHandler: NSObject, FlutterStreamHandler {
   }
 
   func send(_ event: [String: Any]) {
-    DispatchQueue.main.async { [weak self] in
+    // Deferred to the next main-actor turn, as before (was DispatchQueue.main.async).
+    Task { @MainActor [weak self] in
       self?.eventSink?(event)
     }
   }
