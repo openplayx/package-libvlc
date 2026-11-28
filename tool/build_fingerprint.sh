@@ -8,7 +8,7 @@ files=(vlc-sources.env native_common.sh build_fingerprint.sh build_libvlc.sh
   patch_vlc_contrib.py verify_libvlc.py)
 case "$target" in
   android-*) files+=(ensure_libvlc_android.sh prepare_libvlc_android.sh patch_libvlc_android.py) ;;
-  *) files+=(stage_libvlc.py) ;;
+  *) files+=(stage_libvlc.py fix_vlc_config.py) ;;
 esac
 {
   echo "$target"

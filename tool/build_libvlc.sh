@@ -126,6 +126,9 @@ if [[ "$target" = windows-* ]]; then
   flags+=(--disable-macosx --disable-sdl-image)
 fi
 (cd "$build" && "$src/configure" "${flags[@]}")
+if [[ "$target" = windows-* ]]; then
+  python3 -X utf8 -I "$root/tool/fix_vlc_config.py" "$build/config.h"
+fi
 printf '%s\n' "$compile_key" > "$build/.opx-compile-key"
 (cd "$build" && make -j"$OPX_BUILD_JOBS")
 rm -rf "$prefix"
