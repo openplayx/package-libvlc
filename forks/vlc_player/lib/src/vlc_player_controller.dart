@@ -318,7 +318,9 @@ class _VlcPlayerController extends VlcPlayerController
     final pendingMediaSource = _pendingMediaSource;
     if (pendingMediaSource != null) {
       await _setMedia(pendingMediaSource, autoPlay: _pendingAutoPlay);
-      _ensureNotDisposed();
+      if (_isDisposed) {
+        return;
+      }
     }
   }
 
@@ -366,7 +368,9 @@ class _VlcPlayerController extends VlcPlayerController
     final pendingMediaSource = _pendingMediaSource;
     if (pendingMediaSource != null) {
       await _setMedia(pendingMediaSource, autoPlay: _pendingAutoPlay);
-      _ensureNotDisposed();
+      if (_isDisposed) {
+        return textureId;
+      }
     }
 
     return textureId;
