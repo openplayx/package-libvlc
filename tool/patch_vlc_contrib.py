@@ -36,6 +36,26 @@ def patch(source: Path):
     if '\t$(UNPACK)\n' in text:
         live555.write_text(text.replace('\t$(UNPACK)\n', unpack + '\n'))
 
+    # Nettle 4 always writes the complete SHA-1 digest and removed its length
+    # argument. SHA1_Final also promises a full digest when passed a pointer.
+    old_final = '#define SHA1_Final(a,b) sha1_digest(b, sizeof(a), a)'
+    new_final = ('#if NETTLE_VERSION_MAJOR >= 4\n'
+                 '#define SHA1_Final(a,b) sha1_digest(b, a)\n'
+                 '#else\n'
+                 '#define SHA1_Final(a,b) sha1_digest(b, SHA1_DIGEST_SIZE, a)\n'
+                 '#endif')
+    port = source / 'contrib/src/asdcplib/port-to-nettle.patch'
+    text = port.read_text()
+    if '+' + old_final in text:
+        text = text.replace('@@ -0,0 +1,14 @@\n+#include <nettle/aes.h>',
+                            '@@ -0,0 +1,19 @@\n+#include <nettle/version.h>\n+#include <nettle/aes.h>')
+        port.write_text(text.replace('+' + old_final,
+                                    '\n'.join('+' + line for line in new_final.splitlines())))
+    for header in source.glob('contrib/*/asdcplib/src/nettle_map.h'):
+        text = header.read_text()
+        if old_final in text:
+            header.write_text('#include <nettle/version.h>\n' + text.replace(old_final, new_final))
+
     # SID's byte lookup tables assume signed char, as on its original x86
     # targets. Preserve those values on ARM instead of dropping SID support.
     sid = source / 'contrib/src/sidplay2/rules.mak'
