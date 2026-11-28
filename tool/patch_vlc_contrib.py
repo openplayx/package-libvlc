@@ -56,6 +56,13 @@ def patch(source: Path):
         if old_final in text:
             header.write_text('#include <nettle/version.h>\n' + text.replace(old_final, new_final))
 
+    # Regex's old Makefile hardcodes CFLAGS instead of using configure's value.
+    regex = source / 'contrib/src/regex/rules.mak'
+    text = regex.read_text()
+    old = '\t+$(MAKEBUILD) subirs=\n'
+    if old in text:
+        regex.write_text(text.replace(old, '\t+$(MAKEBUILD) subirs= CFLAGS="$(CFLAGS)"\n'))
+
     # SID's byte lookup tables assume signed char, as on its original x86
     # targets. Preserve those values on ARM instead of dropping SID support.
     sid = source / 'contrib/src/sidplay2/rules.mak'
