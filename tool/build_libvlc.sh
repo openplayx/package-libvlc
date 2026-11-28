@@ -36,7 +36,7 @@ if [ "$(cat "$prefix/BUILD_FINGERPRINT" 2>/dev/null || true)" = "$fingerprint" ]
   python3 "$root/tool/verify_libvlc.py" "$target" "$prefix" "$ffmpeg"
   exit 0
 fi
-src="$root/third_party/vlc-desktop/$target"
+src="${OPX_VLC_SOURCE_DIR:-$root/third_party/vlc-desktop/$target}"
 opx_checkout https://github.com/videolan/vlc.git "$VLC_REVISION" "$src"
 python3 "$root/tool/patch_vlc_contrib.py" "$src"
 export PATH="$src/extras/tools/build/bin:$PATH"
