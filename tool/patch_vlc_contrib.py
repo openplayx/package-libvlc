@@ -70,6 +70,19 @@ def patch(source: Path):
     old = 'cd $< && $(HOSTVARS) ./configure $(HOSTCONF)'
     if old in text:
         sid.write_text(text.replace(old, 'cd $< && $(HOSTVARS) CXXFLAGS="$(CXXFLAGS) -fsigned-char" ./configure $(HOSTCONF)'))
+    # MSYS2 ln copies when native symlinks are unavailable. The alias must
+    # wait for its libtool archive instead of racing the parallel build.
+    sid_patch = source / 'contrib/src/sidplay2/opx-resid-alias-dependency.patch'
+    sid_patch.write_text('--- a/resid/Makefile.am\n+++ b/resid/Makefile.am\n@@ -10,7 +10,7 @@\n noinst_LTLIBRARIES = libresidc.la\n noinst_HEADERS = $(resid_headers)\n \n-all-local:\n+all-local: libresidc.la\n \tln -sf libresidc.la libresid.la\n \n endif\n')
+    text = sid.read_text()
+    line = '\t$(APPLY) $(SRC)/sidplay2/opx-resid-alias-dependency.patch'
+    if line not in text:
+        sid.write_text(text.replace('\t$(MOVE)', line + '\n\t$(MOVE)'))
+    for makefile in source.glob('contrib/*/sidplay-libs/resid/Makefile.am'):
+        text = makefile.read_text()
+        fixed = text.replace('all-local:\n', 'all-local: libresidc.la\n')
+        if fixed != text:
+            makefile.write_text(fixed)
     # CMake's host FPU query reports false for native Linux AArch64. The
     # selected NEON64 decoder requires floating point on every ARM64 target.
     mpg_patch = source / 'contrib/src/mpg123/opx-arm64-fpu.patch'
