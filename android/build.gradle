@@ -67,7 +67,17 @@ def verifiedCache = abis.every { abi ->
 def bindings = new File(packageRoot, 'third_party/libvlcjni/libvlc')
 def bindingsReady = new File(bindings, 'src/org/videolan/libvlc/LibVLC.java').isFile() &&
         new File(bindings, 'assets/lua').isDirectory()
-if (!verifiedCache || !bindingsReady) {
+// Lint needs the complete Java bindings, but does not inspect native binaries.
+// Limit this mode to the analysis gate's clean/lint tasks so it cannot produce
+// an APK without the normal native build and verification.
+def lintOnly = System.getenv('OPX_ANDROID_LINT_ONLY') == '1' &&
+        gradle.startParameter.taskNames.every { it.endsWith(':clean') || it.endsWith(':lintDebug') }
+if (lintOnly) {
+    def result = providers.exec {
+        commandLine 'bash', new File(packageRoot, 'tool/prepare_libvlc_android.sh').path
+    }.result.get()
+    result.assertNormalExitValue()
+} else if (!verifiedCache || !bindingsReady) {
     def result = providers.exec {
         commandLine 'bash', new File(packageRoot, 'tool/ensure_libvlc_android.sh').path, *abis
         environment 'ANDROID_NDK_HOME', ndk
