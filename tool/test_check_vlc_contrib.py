@@ -106,6 +106,18 @@ include ../src/*/rules.mak
             self.assertEqual([p['package'] for p in summary['packages']], ['a', 'b', 'c'])
             self.assertEqual((build / 'builds.log').read_text().split(), ['a', 'b', 'c', 'd', 'b', 'c'])
             self.assertTrue((build / '.d').exists())
+            # Installed .pc files can remove locally built packages from PKGS.
+            # Pending invalidations must survive a run selecting another unit.
+            makefile = build / 'Makefile'
+            makefile.write_text(makefile.read_text().replace('PKGS = a b c d', 'PKGS = a d'))
+            result, summary, _ = run('invalidate-unselected', '--only', 'd', '--rebuild', 'b')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse((build / '.b').exists())
+            result, summary, _ = run('resume-invalidated', '--only', 'c')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual([p['package'] for p in summary['packages']], ['a', 'b', 'c'])
+            self.assertEqual((build / 'builds.log').read_text().split(),
+                             ['a', 'b', 'c', 'd', 'b', 'c', 'b', 'c'])
 
 
 if __name__ == '__main__':

@@ -87,9 +87,12 @@ def parse_plan(output: str) -> tuple[dict, dict]:
     return packages, configuration
 
 
-def planner() -> str:
+def planner(previous=()) -> str:
+    if any(not NAME.fullmatch(name) for name in previous):
+        raise ValueError('invalid cached package name')
     lines = ['.PHONY: opx-check-plan', 'opx-check-plan: ; @:']
-    lines += ['OPX_CHECK_PACKAGES := $(sort $(PKGS) $(foreach p,$(PKGS_ALL),$(if $(wildcard .$(p)),$(p))))',
+    lines += ['OPX_PREVIOUS_PACKAGES := ' + ' '.join(sorted(previous)),
+              'OPX_CHECK_PACKAGES := $(sort $(PKGS) $(foreach p,$(PKGS_ALL),$(if $(wildcard .$(p)),$(p))) $(filter $(PKGS_ALL),$(OPX_PREVIOUS_PACKAGES)))',
               '$(foreach p,$(OPX_CHECK_PACKAGES),$(info OPX_PLAN|$(p)|$(filter $(OPX_CHECK_PACKAGES),$(DEPS_$(p)))))']
     lines += [f'$(info OPX_CONFIG|{key}|$({key}))' for key in CONFIG_KEYS]
     return '\n'.join(lines) + '\n'
@@ -165,8 +168,11 @@ def main() -> int:
         parser.error('jobs must be positive and directory must contain a contrib Makefile')
     report.mkdir(parents=True, exist_ok=True)
     atomic_json(report / 'summary.json', {'overall': 'not_run', 'packages': []})
+    state_file = directory / '.opx-package-checks.json'
+    state = json.loads(state_file.read_text(encoding='utf-8')) if state_file.exists() else {'packages': {}}
+    previous = set(state['packages']) | set(state.get('invalidated', []))
     plan_file = report / 'plan.mk'
-    plan_file.write_text(planner(), encoding='utf-8')
+    plan_file.write_text(planner(previous), encoding='utf-8')
     make = shutil.which('make.exe' if os.name == 'nt' else 'make') or 'make'
     # The only selected target is a no-op. Do not use make -n/-q on package
     # targets, since recursive make recipes may execute even with those flags.
@@ -182,8 +188,6 @@ def main() -> int:
     if args.list:
         print('\n'.join(order))
         return 0
-    state_file = directory / '.opx-package-checks.json'
-    state = json.loads(state_file.read_text(encoding='utf-8')) if state_file.exists() else {'packages': {}}
     hashes = {name: fingerprint(directory, packages[name]) for name in packages}
     # System/flag changes should use a separate source cache (the Windows CI
     # key includes those inputs). Refuse silent reuse if an operator changes
@@ -191,7 +195,7 @@ def main() -> int:
     global_hash = hashlib.sha256(json.dumps(configuration, sort_keys=True).encode()).hexdigest()
     if state.get('configuration') not in (None, global_hash):
         raise ValueError('contrib compiler/configuration changed; use a separate source cache')
-    changed = set(filter(None, args.rebuild.split(',')))
+    changed = set(filter(None, args.rebuild.split(','))) | set(state.get('invalidated', []))
     unknown = changed - packages.keys()
     if unknown:
         raise ValueError(f'unknown rebuild package(s): {sorted(unknown)}')
@@ -206,6 +210,7 @@ def main() -> int:
     for name in affected:
         state['packages'].pop(name, None)
     state['configuration'] = global_hash
+    state['invalidated'] = sorted(affected)
     atomic_json(state_file, state)
     rows = {name: {'package': name, 'dependencies': packages[name]['dependencies'],
                    'status': 'not_run', 'recipe': hashes[name]} for name in order}
@@ -239,6 +244,7 @@ def main() -> int:
                     rows[name].update(status='passed', seconds=round(time.monotonic() - start, 2),
                                       cached=before == stamp.stat().st_mtime_ns)
                     state['packages'][name] = {'recipe': hashes[name]}
+                    state['invalidated'] = [package for package in state['invalidated'] if package != name]
                     atomic_json(state_file, state)
                     log.close(); log = None; current = None
                     atomic_json(report / 'summary.json', summary)
