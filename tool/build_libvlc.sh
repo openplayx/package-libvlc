@@ -59,7 +59,14 @@ native_build=()
 [[ "$target" != linux-* ]] || native_build=(--build="$host")
 (cd "$deps" && ../bootstrap "${native_build[@]}" --host="$host" --prefix="$contrib" "${contrib_args[@]}")
 printf 'PKG_CONFIG_PATH := %s\n' "$OPX_FFMPEG_PKGCONFIG" > "$deps/config.mak"
-(cd "$deps" && make -j"$OPX_BUILD_JOBS" fetch && make -j"$OPX_BUILD_JOBS")
+# Check one dependency at a time, keeping parallel compilation inside each
+# package. The checker invalidates only changed recipes and their dependents.
+dependency_args=(--directory "$deps" --report "${OPX_VLC_DEPENDENCY_REPORT:-$root/build/dependency-checks/$target}"
+  --jobs "$OPX_BUILD_JOBS")
+if [ -n "${OPX_VLC_SOURCE_CACHE_KEY:-}" ]; then
+  dependency_args+=(--cache-key "$OPX_VLC_SOURCE_CACHE_KEY")
+fi
+python3 -X utf8 -I "$root/tool/check_vlc_contrib.py" "${dependency_args[@]}"
 # Never retain a previous contrib build's static FFmpeg or headers.
 rm -f "$contrib"/lib/libav*.a "$contrib"/lib/libsw*.a
 rm -f "$contrib"/lib/pkgconfig/libav*.pc "$contrib"/lib/pkgconfig/libsw*.pc
@@ -79,6 +86,27 @@ flags=(--host="$host" --prefix="$prefix" --with-contrib="$contrib"
   --disable-qt --disable-skins2 --disable-ncurses --disable-lua --disable-chromaprint --disable-gst-decode
   --disable-x264 --disable-x265 --disable-postproc --enable-avcodec --enable-avformat
   --enable-swscale --disable-update-check --disable-notify)
+# Retain objects when only a contrib archive changes, but reconfigure/recompile
+# when the compiler, flags, source revision or configure arguments change.
+compile_key="$(python3 - "$VLC_REVISION" "${flags[@]}" <<'PYKEY'
+import hashlib, json, os, subprocess, sys
+inputs = {'arguments': sys.argv[1:], 'environment': {key: os.environ.get(key, '') for key in (
+    'CC', 'CXX', 'BUILDCC', 'CFLAGS', 'CXXFLAGS', 'CPPFLAGS', 'LDFLAGS',
+    'FLUIDLITE_CFLAGS', 'FLUIDSYNTH_CFLAGS', 'AVCODEC_CFLAGS', 'AVFORMAT_CFLAGS',
+    'AVUTIL_CFLAGS', 'SWSCALE_CFLAGS')}}
+for compiler in ('gcc', 'g++'):
+    inputs[compiler] = subprocess.check_output([compiler, '--version'], text=True).splitlines()[0]
+print(hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest())
+PYKEY
+)"
+if [ "$(cat "$build/.opx-compile-key" 2>/dev/null || true)" != "$compile_key" ]; then
+  rm -rf "$build"
+  mkdir -p "$build"
+else
+  # Libtool's -lfoo dependencies do not track changes to static contrib archives.
+  # Relink plugins/core using the existing object files after package changes.
+  find "$build" -name '*.la' -type f -delete
+fi
 if [[ "$target" = windows-* ]]; then
   # Resolve the C++ and pthread runtimes statically, while keeping FFmpeg
   # shared. A global -static would select another FFmpeg's static archives.
@@ -89,7 +117,9 @@ if [[ "$target" = windows-* ]]; then
   export LDFLAGS="-L$(cygpath -m "$runtime") -static-libgcc -static-libstdc++"
   flags+=(--disable-macosx --disable-sdl-image)
 fi
-(cd "$build" && "$src/configure" "${flags[@]}" && make -j"$OPX_BUILD_JOBS")
+(cd "$build" && "$src/configure" "${flags[@]}")
+printf '%s\n' "$compile_key" > "$build/.opx-compile-key"
+(cd "$build" && make -j"$OPX_BUILD_JOBS")
 rm -rf "$prefix"
 (cd "$build" && make install)
 python3 "$root/tool/stage_libvlc.py" "$target" "$prefix" "$src"

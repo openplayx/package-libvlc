@@ -95,6 +95,8 @@ def planner(previous=()) -> str:
               'OPX_CHECK_PACKAGES := $(sort $(PKGS) $(foreach p,$(PKGS_ALL),$(if $(wildcard .$(p)),$(p))) $(filter $(PKGS_ALL),$(OPX_PREVIOUS_PACKAGES)))',
               '$(foreach p,$(OPX_CHECK_PACKAGES),$(info OPX_PLAN|$(p)|$(filter $(OPX_CHECK_PACKAGES),$(DEPS_$(p)))))']
     lines += [f'$(info OPX_CONFIG|{key}|$({key}))' for key in CONFIG_KEYS]
+    lines += ['$(info OPX_CONFIG|CC_VERSION|$(shell $(CC) --version 2>/dev/null | head -n1))',
+              '$(info OPX_CONFIG|CXX_VERSION|$(shell $(CXX) --version 2>/dev/null | head -n1))']
     return '\n'.join(lines) + '\n'
 
 
@@ -161,8 +163,11 @@ def main() -> int:
     parser.add_argument('--jobs', type=int, default=2, help='parallel compilation jobs inside each package')
     parser.add_argument('--adopt-existing', action='store_true',
                         help='explicitly adopt already verified make stamps on first use')
+    parser.add_argument('--cache-key', default='', help='validated source-cache key (full checks only)')
     parser.add_argument('--list', action='store_true')
     args = parser.parse_args()
+    if args.cache_key and not re.fullmatch(r'[a-f0-9]{16}', args.cache_key):
+        parser.error('cache-key must contain 16 lowercase hexadecimal digits')
     directory, report = args.directory.resolve(), args.report.resolve()
     if args.jobs < 1 or not (directory / 'Makefile').is_file():
         parser.error('jobs must be positive and directory must contain a contrib Makefile')
@@ -193,8 +198,22 @@ def main() -> int:
     # key includes those inputs). Refuse silent reuse if an operator changes
     # the effective contrib configuration in the same directory.
     global_hash = hashlib.sha256(json.dumps(configuration, sort_keys=True).encode()).hexdigest()
-    if state.get('configuration') not in (None, global_hash):
+    legacy = {key: value for key, value in configuration.items() if key in CONFIG_KEYS}
+    legacy_hash = hashlib.sha256(json.dumps(legacy, sort_keys=True).encode()).hexdigest()
+    adopting_v1 = args.adopt_existing and not state.get('schema') and state.get('configuration') == legacy_hash
+    if state.get('configuration') not in (None, global_hash) and not adopting_v1:
         raise ValueError('contrib compiler/configuration changed; use a separate source cache')
+    common = hashlib.sha256()
+    common_files = [directory.parent / 'bootstrap', *sorted((directory.parent / 'src').glob('*'))]
+    for path in common_files:
+        if path.is_file():
+            common.update(path.name.encode())
+            common.update(path.read_bytes())
+    common_hash = common.hexdigest()
+    if state.get('common_recipe') not in (None, common_hash):
+        raise ValueError('global contrib recipe changed; use a separate source cache')
+    if state.get('packages') and not state.get('common_recipe') and not args.adopt_existing:
+        raise ValueError('adopt the verified legacy cache once with --adopt-existing')
     changed = set(filter(None, args.rebuild.split(','))) | set(state.get('invalidated', []))
     unknown = changed - packages.keys()
     if unknown:
@@ -210,6 +229,8 @@ def main() -> int:
     for name in affected:
         state['packages'].pop(name, None)
     state['configuration'] = global_hash
+    state['schema'] = 2
+    state['common_recipe'] = common_hash
     state['invalidated'] = sorted(affected)
     atomic_json(state_file, state)
     rows = {name: {'package': name, 'dependencies': packages[name]['dependencies'],
@@ -262,6 +283,11 @@ def main() -> int:
         rows[current].update(status='failed', seconds=round(time.monotonic() - start, 2), exit_code=code)
     summary['overall'] = 'passed' if code == 0 and all(row['status'] == 'passed' for row in rows.values()) else 'failed'
     atomic_json(report / 'summary.json', summary)
+    if summary['overall'] == 'passed' and args.cache_key and not args.only:
+        marker = directory.parent.parent / '.opx-source-cache-key'
+        temporary = marker.with_suffix('.tmp')
+        temporary.write_text(args.cache_key + '\n', encoding='ascii')
+        temporary.replace(marker)
     print(f'{summary["overall"]}: {sum(row["status"] == "passed" for row in rows.values())}/{len(order)} selected packages; {report}', flush=True)
     return 0 if summary['overall'] == 'passed' else 1
 

@@ -83,15 +83,17 @@ include ../src/*/rules.mak
                 self.assertTrue(summary.exists(), process.stderr)
                 return process, json.loads(summary.read_text()), folder
 
-            result, summary, first = run('first')
+            result, summary, first = run('first', '--cache-key', '0123456789abcdef')
             self.assertEqual(result.returncode, 1, result.stderr)
             self.assertEqual([p['status'] for p in summary['packages']],
                              ['passed', 'failed', 'not_run', 'not_run'])
             self.assertEqual((build / 'builds.log').read_text().split(), ['a'])
+            self.assertFalse((root / '.opx-source-cache-key').exists())
             (build / 'fail-b').unlink()
-            result, summary, second = run('second')
+            result, summary, second = run('second', '--cache-key', '0123456789abcdef')
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue(summary['packages'][0]['cached'])
+            self.assertEqual((root / '.opx-source-cache-key').read_text().strip(), '0123456789abcdef')
             self.assertEqual((build / 'builds.log').read_text().split(), ['a', 'b', 'c', 'd'])
             self.assertTrue((first / 'b.log').exists())
             self.assertFalse((first / 'c.log').exists())

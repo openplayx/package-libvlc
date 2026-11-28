@@ -66,8 +66,12 @@ bash tool/build_libvlc.sh linux-arm64  # on a matching Linux host
 bash tool/build_libvlc.sh windows-x86_64  # in MSYS2
 ```
 
-Check an idle, already bootstrapped contrib tree package by package, using the
-same compiler environment as its original build:
+Desktop build entry points check contrib packages individually and retain passed
+results. Compiler, source or global flag changes invalidate core objects; package
+recipe changes rebuild affected dependencies and relink existing plugin objects.
+
+Check an idle, already bootstrapped contrib tree independently, using the same
+compiler environment as its original build:
 
 ```sh
 CFLAGS='-O2 -g -std=gnu17' python3 -X utf8 tool/check_vlc_contrib.py --directory "$OPX_VLC_SOURCE_DIR/contrib/opx-windows-x86_64" --report build/dependency-checks --adopt-existing

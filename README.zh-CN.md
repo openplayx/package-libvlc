@@ -58,7 +58,9 @@ bash tool/build_libvlc.sh linux-arm64       # 在对应架构的 Linux 主机运
 bash tool/build_libvlc.sh windows-x86_64    # 在 MSYS2 中运行
 ```
 
-在空闲、已 bootstrap 的 contrib 缓存上，可用与原构建相同的编译环境逐包检查：
+桌面构建入口自动逐包检查 contrib，保留已通过的结果。只有编译器、源码或全局编译参数变化才清理主库对象；依赖配方变化只重建受影响的包，并用已有对象重新链接插件。
+
+在空闲、已 bootstrap 的 contrib 缓存上，也可用与原构建相同的编译环境单独检查：
 
 ```sh
 CFLAGS='-O2 -g -std=gnu17' python3 -X utf8 tool/check_vlc_contrib.py --directory "$OPX_VLC_SOURCE_DIR/contrib/opx-windows-x86_64" --report build/dependency-checks --adopt-existing

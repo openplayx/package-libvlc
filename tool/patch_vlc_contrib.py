@@ -83,6 +83,16 @@ def patch(source: Path):
         fixed = text.replace('all-local:\n', 'all-local: libresidc.la\n')
         if fixed != text:
             makefile.write_text(fixed)
+
+    # VLC's Windows plugins link mysofa statically. Its generated export
+    # header otherwise emits DLL import references from libspatialaudio.a.
+    spatial = source / 'contrib/src/spatialaudio/rules.mak'
+    text = spatial.read_text()
+    marker = '# OpenPlayX: static mysofa consumer on Windows.'
+    if marker not in text:
+        spatial.write_text(text + '\n' + marker + '\nifdef HAVE_WIN32\n'
+                           'SPATIALAUDIO_CONF += -DCMAKE_CXX_FLAGS="$(CXXFLAGS) -DMYSOFA_STATIC"\n'
+                           'endif\n')
     # CMake's host FPU query reports false for native Linux AArch64. The
     # selected NEON64 decoder requires floating point on every ARM64 target.
     mpg_patch = source / 'contrib/src/mpg123/opx-arm64-fpu.patch'
